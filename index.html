@@ -1,0 +1,1253 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Digital Twin Timbangan Sentisimal 500kg - Virtual Lab Metrologi Legal</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Three.js & OrbitControls -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+            overflow-x: hidden;
+        }
+
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1e293b;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.75);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .bap-paper {
+            background: #ffffff;
+            color: #1e293b;
+            font-family: 'Times New Roman', Times, serif;
+        }
+
+        /* Pulse animation for active zero indicator */
+        @keyframes pulse-green {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        .pulse-active {
+            animation: pulse-green 1.5s infinite;
+        }
+    </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden select-none">
+
+    <!-- HEADER / METROLOGY NAVBAR -->
+    <header class="h-14 bg-slate-900 border-b border-slate-800 px-4 flex items-center justify-between shrink-0 z-20">
+        <div class="flex items-center gap-3">
+            <div class="w-9 h-9 bg-emerald-600 rounded-lg flex items-center justify-center shadow-lg shadow-emerald-900/50">
+                <i class="fa-solid fa-scale-balanced text-white text-lg"></i>
+            </div>
+            <div>
+                <h1 class="text-sm font-bold tracking-wide uppercase text-slate-100 flex items-center gap-2">
+                    Digital Twin Timbangan Sentisimal 
+                    <span class="text-xs bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded font-mono">Max 500 kg | e=100g</span>
+                </h1>
+                <p class="text-[11px] text-slate-400">Direktorat Metrologi PKTN - Virtual Lab Pengujian & Ujian Praktik Penera</p>
+            </div>
+        </div>
+
+        <!-- Mode Selection & Controls -->
+        <div class="flex items-center gap-3">
+            <div class="bg-slate-800 p-1 rounded-lg border border-slate-700 flex text-xs">
+                <button id="mode-practice-btn" onclick="setAppMode('practice')" class="px-3 py-1.5 rounded-md font-medium transition-all bg-emerald-600 text-white shadow">
+                    <i class="fa-solid fa-graduation-cap mr-1.5"></i>Mode Praktik
+                </button>
+                <button id="mode-exam-btn" onclick="setAppMode('exam')" class="px-3 py-1.5 rounded-md font-medium text-slate-400 hover:text-white transition-all">
+                    <i class="fa-solid fa-clipboard-check mr-1.5"></i>Mode Ujian Peneraan
+                </button>
+            </div>
+
+            <button onclick="resetSimulation()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-1.5">
+                <i class="fa-solid fa-rotate-right"></i> Reset Lab
+            </button>
+        </div>
+    </header>
+
+    <!-- MAIN LAB CONTENT (SPLIT VIEW 3D & CONTROL PANEL) -->
+    <div class="flex-1 flex overflow-hidden relative">
+
+        <!-- 3D VIEWPORT (LEFT SIDE) -->
+        <div class="flex-1 relative bg-slate-950">
+            <!-- Three.js Canvas Container -->
+            <div id="canvas-container" class="w-full h-full cursor-grab active:cursor-grabbing"></div>
+
+            <!-- 3D HUD OVERLAY TOP LEFT -->
+            <div class="absolute top-4 left-4 z-10 flex flex-col gap-2 pointer-events-none">
+                <div class="glass-panel p-3 rounded-xl pointer-events-auto flex items-center gap-3 shadow-2xl">
+                    <div class="flex flex-col">
+                        <span class="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Indikator Kesetimbangan Gandar</span>
+                        <div class="flex items-center gap-2 mt-1">
+                            <div id="balance-status-badge" class="px-2.5 py-1 rounded text-xs font-bold font-mono bg-yellow-500/20 text-yellow-400 border border-yellow-500/40">
+                                BELUM SETIMBANG
+                            </div>
+                            <span id="pointer-angle-text" class="text-xs font-mono text-slate-300">Deviasi: +0.0°</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Waterpas (Spirit Level) Widget -->
+                <div class="glass-panel p-3 rounded-xl pointer-events-auto flex items-center gap-3">
+                    <div class="relative w-12 h-12 rounded-full border-2 border-emerald-500/50 bg-slate-900 flex items-center justify-center overflow-hidden">
+                        <!-- Crosshair lines -->
+                        <div class="absolute w-full h-[1px] bg-slate-700"></div>
+                        <div class="absolute h-full w-[1px] bg-slate-700"></div>
+                        <div class="absolute w-6 h-6 border border-emerald-400/40 rounded-full"></div>
+                        <!-- Waterpas Bubble -->
+                        <div id="waterpas-bubble" class="w-3.5 h-3.5 bg-emerald-400 rounded-full shadow-[0_0_8px_#34d399] transition-all duration-300" style="transform: translate(0px, 0px);"></div>
+                    </div>
+                    <div>
+                        <div class="text-[10px] uppercase font-bold text-slate-400">Ketinggian Waterpas</div>
+                        <div id="waterpas-status" class="text-xs font-semibold text-emerald-400">Datar (Nivo Pas)</div>
+                        <button onclick="adjustLevelingFeet()" class="text-[10px] text-blue-400 hover:underline mt-0.5 block">
+                            <i class="fa-solid fa-wrench mr-1"></i>Stel Kaki Rata
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3D VIEW CONTROLS BOTTOM LEFT -->
+            <div class="absolute bottom-4 left-4 z-10 flex gap-2">
+                <button onclick="setCameraView('default')" class="glass-panel hover:bg-slate-800 text-xs px-3 py-2 rounded-lg text-slate-200 border border-slate-700 transition flex items-center gap-1.5 shadow-lg">
+                    <i class="fa-solid fa-eye text-emerald-400"></i> Lihat Utuh
+                </button>
+                <button onclick="setCameraView('gandar')" class="glass-panel hover:bg-slate-800 text-xs px-3 py-2 rounded-lg text-slate-200 border border-slate-700 transition flex items-center gap-1.5 shadow-lg">
+                    <i class="fa-solid fa-magnifying-glass text-blue-400"></i> Zoom Gandar
+                </button>
+                <button onclick="setCameraView('levers')" class="glass-panel hover:bg-slate-800 text-xs px-3 py-2 rounded-lg text-slate-200 border border-slate-700 transition flex items-center gap-1.5 shadow-lg">
+                    <i class="fa-solid fa-cubes text-purple-400"></i> Mode Transparan (Tuas 1:100)
+                </button>
+            </div>
+
+            <!-- Interactive Guide Toast (Practice Mode) -->
+            <div id="guided-toast" class="absolute bottom-4 right-4 z-10 max-w-md glass-panel p-4 rounded-xl border border-emerald-500/30 shadow-2xl transition-all duration-300">
+                <div class="flex items-start gap-3">
+                    <i class="fa-solid fa-circle-info text-emerald-400 text-lg mt-0.5"></i>
+                    <div>
+                        <h4 id="toast-title" class="text-xs font-bold text-emerald-400 uppercase tracking-wider">Petunjuk Peneraan</h4>
+                        <p id="toast-desc" class="text-xs text-slate-300 mt-1 leading-relaxed">
+                            Selamat datang di Virtual Lab Timbangan Sentisimal. Mulailah dengan memeriksa <strong>Waterpas</strong> dan melakukan <strong>Penyetelan Nol</strong> menggunakan Sekrup Penyetel.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- RIGHT CONTROL CONSOLE & METROLOGY PANEL -->
+        <div class="w-[520px] bg-slate-900 border-l border-slate-800 flex flex-col z-10 shadow-2xl">
+            
+            <!-- TABS NAVIGATION -->
+            <div class="flex bg-slate-950 border-b border-slate-800 text-xs font-medium">
+                <button id="tab-btn-controls" onclick="switchTab('controls')" class="flex-1 py-3 border-b-2 border-emerald-500 text-emerald-400 font-semibold flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-sliders"></i> Kontrol & Muatan
+                </button>
+                <button id="tab-btn-protocol" onclick="switchTab('protocol')" class="flex-1 py-3 border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-list-check"></i> Tahap Pengujian
+                </button>
+                <button id="tab-btn-bap" onclick="switchTab('bap')" class="flex-1 py-3 border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-file-contract"></i> Berita Acara (BAP)
+                </button>
+            </div>
+
+            <!-- TAB 1: KONTROL DAN MUATAN -->
+            <div id="tab-content-controls" class="flex-1 overflow-y-auto p-4 space-y-4">
+                
+                <!-- Spesifikasi Teknis Card -->
+                <div class="bg-slate-800/60 p-3.5 rounded-xl border border-slate-700/60">
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="text-xs font-bold text-slate-200 uppercase tracking-wider"><i class="fa-solid fa-tag text-emerald-400 mr-1.5"></i>Identitas Timbangan</span>
+                        <span class="text-[10px] bg-blue-500/20 text-blue-300 border border-blue-500/30 px-2 py-0.5 rounded font-mono">Kelas III</span>
+                    </div>
+                    <div class="grid grid-cols-3 gap-2 text-center text-xs">
+                        <div class="bg-slate-900/80 p-2 rounded-lg border border-slate-800">
+                            <span class="text-[10px] text-slate-400 block">Kapasitas (Max)</span>
+                            <span class="font-bold text-emerald-400 font-mono">500 kg</span>
+                        </div>
+                        <div class="bg-slate-900/80 p-2 rounded-lg border border-slate-800">
+                            <span class="text-[10px] text-slate-400 block">Minimum (Min)</span>
+                            <span class="font-bold text-slate-200 font-mono">2 kg (20e)</span>
+                        </div>
+                        <div class="bg-slate-900/80 p-2 rounded-lg border border-slate-800">
+                            <span class="text-[10px] text-slate-400 block">Daya Baca (e=d)</span>
+                            <span class="font-bold text-slate-200 font-mono">100 g</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Penyetelan Nol & Gandar Controls -->
+                <div class="bg-slate-800/60 p-4 rounded-xl border border-slate-700/60 space-y-3">
+                    <h3 class="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center justify-between">
+                        <span><i class="fa-solid fa-compass text-amber-400 mr-1.5"></i>Penyetelan Nol & Gandar</span>
+                        <span class="text-[10px] text-slate-400 font-normal">Rasio Tuas Utama = 1 : 100</span>
+                    </h3>
+
+                    <!-- Zero Adjuster Slider -->
+                    <div>
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="text-slate-300">Sekrup Penyetel Nol (Zero Screw)</span>
+                            <span id="zero-screw-val" class="font-mono text-amber-400 font-bold">0.0 g</span>
+                        </div>
+                        <input type="range" id="zero-screw-slider" min="-500" max="500" step="10" value="0" oninput="updateZeroScrew(this.value)" class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-amber-500">
+                        <div class="flex justify-between text-[10px] text-slate-500 mt-0.5">
+                            <span>-500g (Pemberat)</span>
+                            <span>0 (Setimbang)</span>
+                            <span>+500g (Pemberat)</span>
+                        </div>
+                    </div>
+
+                    <!-- Bobot Ingsut (Sliding Poise) Slider -->
+                    <div class="pt-2 border-t border-slate-700/50">
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="text-slate-300">Bobot Ingsut di Gandar Utama</span>
+                            <span id="sliding-poise-val" class="font-mono text-emerald-400 font-bold">0.00 kg</span>
+                        </div>
+                        <input type="range" id="sliding-poise-slider" min="0" max="50" step="0.1" value="0" oninput="updateSlidingPoise(this.value)" class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-500">
+                        <div class="flex justify-between text-[10px] text-slate-500 mt-0.5">
+                            <span>0.00 kg</span>
+                            <span>Skala Halus (Skala Utuh max 50kg)</span>
+                            <span>50.00 kg</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Counterweight Hanger (Piringan Gantung) -->
+                <div class="bg-slate-800/60 p-4 rounded-xl border border-slate-700/60 space-y-3">
+                    <h3 class="text-xs font-bold text-slate-200 uppercase tracking-wider flex justify-between items-center">
+                        <span><i class="fa-solid fa-layer-group text-blue-400 mr-1.5"></i>Anak Timbangan (AT) Piringan Gantung</span>
+                        <span id="total-at-val" class="font-mono text-blue-400 font-bold">0 kg (Setara 0 kg)</span>
+                    </h3>
+                    <p class="text-[11px] text-slate-400">
+                        Massa fisik AT 1 kg pada piringan menyeimbangkan beban 100 kg di lantai muatan.
+                    </p>
+
+                    <!-- Add/Remove AT Buttons -->
+                    <div class="grid grid-cols-3 gap-2">
+                        <button onclick="addHangerWeight(50)" class="bg-slate-700 hover:bg-slate-600 border border-slate-600 text-slate-200 text-xs py-2 px-2 rounded-lg font-medium transition flex flex-col items-center">
+                            <span class="font-bold font-mono">+50 kg (eq)</span>
+                            <span class="text-[9px] text-slate-400">Massa Fisik: 0.5 kg</span>
+                        </button>
+                        <button onclick="addHangerWeight(100)" class="bg-slate-700 hover:bg-slate-600 border border-slate-600 text-slate-200 text-xs py-2 px-2 rounded-lg font-medium transition flex flex-col items-center">
+                            <span class="font-bold font-mono">+100 kg (eq)</span>
+                            <span class="text-[9px] text-slate-400">Massa Fisik: 1.0 kg</span>
+                        </button>
+                        <button onclick="addHangerWeight(200)" class="bg-slate-700 hover:bg-slate-600 border border-slate-600 text-slate-200 text-xs py-2 px-2 rounded-lg font-medium transition flex flex-col items-center">
+                            <span class="font-bold font-mono">+200 kg (eq)</span>
+                            <span class="text-[9px] text-slate-400">Massa Fisik: 2.0 kg</span>
+                        </button>
+                    </div>
+
+                    <div class="flex justify-between items-center pt-1">
+                        <span class="text-xs text-slate-400">Daftar AT Terpasang:</span>
+                        <button onclick="clearHangerWeights()" class="text-xs text-red-400 hover:underline">
+                            <i class="fa-solid fa-trash mr-1"></i>Kosongkan AT
+                        </button>
+                    </div>
+                    <div id="hanger-weights-list" class="flex flex-wrap gap-1.5 min-h-[32px] p-2 bg-slate-900/60 rounded-lg border border-slate-800 text-xs font-mono text-slate-300">
+                        <span class="text-slate-500 italic text-[11px]">Belum ada Anak Timbangan di piringan</span>
+                    </div>
+                </div>
+
+                <!-- Platform Load & Position Placement -->
+                <div class="bg-slate-800/60 p-4 rounded-xl border border-slate-700/60 space-y-3">
+                    <h3 class="text-xs font-bold text-slate-200 uppercase tracking-wider flex justify-between items-center">
+                        <span><i class="fa-solid fa-weight-hanging text-purple-400 mr-1.5"></i>Muatan Beban Standar (Platform)</span>
+                        <span id="platform-load-val" class="font-mono text-purple-400 font-bold">0 kg</span>
+                    </h3>
+
+                    <!-- Quick Load Presets -->
+                    <div class="grid grid-cols-4 gap-1.5 text-xs">
+                        <button onclick="setPlatformLoad(0)" class="bg-slate-700 hover:bg-slate-600 py-1.5 rounded text-slate-200 font-mono">0 kg</button>
+                        <button onclick="setPlatformLoad(2)" class="bg-slate-700 hover:bg-slate-600 py-1.5 rounded text-slate-200 font-mono">2 kg (Min)</button>
+                        <button onclick="setPlatformLoad(50)" class="bg-slate-700 hover:bg-slate-600 py-1.5 rounded text-slate-200 font-mono">50 kg</button>
+                        <button onclick="setPlatformLoad(100)" class="bg-slate-700 hover:bg-slate-600 py-1.5 rounded text-slate-200 font-mono">100 kg</button>
+                        <button onclick="setPlatformLoad(166.6)" class="bg-slate-700 hover:bg-slate-600 py-1.5 rounded text-slate-200 font-mono">166.6kg (1/3)</button>
+                        <button onclick="setPlatformLoad(250)" class="bg-slate-700 hover:bg-slate-600 py-1.5 rounded text-slate-200 font-mono">250 kg (50%)</button>
+                        <button onclick="setPlatformLoad(500)" class="bg-slate-700 hover:bg-slate-600 py-1.5 rounded text-slate-200 font-mono">500 kg (Max)</button>
+                        <button onclick="addSensitivityImbalance()" class="bg-amber-600/30 hover:bg-amber-600/50 border border-amber-500/40 text-amber-300 py-1.5 rounded font-mono text-[11px]">+BKD (+150g)</button>
+                    </div>
+
+                    <!-- Eccentricity Position Selector -->
+                    <div class="pt-2 border-t border-slate-700/50">
+                        <label class="text-xs text-slate-300 block mb-1.5">Posisi Muatan di Lantai (Uji Eksentrisitas):</label>
+                        <div class="grid grid-cols-3 gap-1.5 text-center text-xs">
+                            <button id="pos-btn-tl" onclick="setLoadPosition('TL')" class="bg-slate-900 hover:bg-slate-700 p-2 rounded border border-slate-700 text-slate-300">Belakang Kiri (1)</button>
+                            <button id="pos-btn-c" onclick="setLoadPosition('C')" class="bg-emerald-600/30 border border-emerald-500/50 text-emerald-300 p-2 rounded font-bold">Tengah (Pusat)</button>
+                            <button id="pos-btn-tr" onclick="setLoadPosition('TR')" class="bg-slate-900 hover:bg-slate-700 p-2 rounded border border-slate-700 text-slate-300">Belakang Kanan (2)</button>
+                            <button id="pos-btn-bl" onclick="setLoadPosition('BL')" class="bg-slate-900 hover:bg-slate-700 p-2 rounded border border-slate-700 text-slate-300">Depan Kiri (3)</button>
+                            <div></div>
+                            <button id="pos-btn-br" onclick="setLoadPosition('BR')" class="bg-slate-900 hover:bg-slate-700 p-2 rounded border border-slate-700 text-slate-300">Depan Kanan (4)</button>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- TAB 2: TAHAP PENGUJIEN METROLOGI (PROTOCOL & GUIDANCE) -->
+            <div id="tab-content-protocol" class="flex-1 overflow-y-auto p-4 space-y-4 hidden">
+                
+                <!-- ST TBO / OIML R76 Rules Banner -->
+                <div class="bg-blue-950/40 border border-blue-500/30 p-3.5 rounded-xl text-xs space-y-1">
+                    <div class="flex items-center gap-2 text-blue-400 font-bold uppercase tracking-wider">
+                        <i class="fa-solid fa-gavel"></i> Syarat Teknis TBO (ST Timbangan Bukan Otomatis)
+                    </div>
+                    <p class="text-slate-300 text-[11px] leading-relaxed">
+                        Pengujian dilakukan sesuai ketentuan Ditjen PKTN. Toleransi BKD (Batas Kesalahan yang Diizinkan) ditentukan berdasarkan rentang muatan pengujian.
+                    </p>
+                </div>
+
+                <!-- BKD Reference Matrix -->
+                <div class="bg-slate-800/60 p-3.5 rounded-xl border border-slate-700/60 text-xs">
+                    <h4 class="font-bold text-slate-200 mb-2 flex items-center justify-between">
+                        <span>Tabel BKD Timbangan Kelas III</span>
+                        <div class="flex gap-1 text-[10px]">
+                            <button id="bkd-type-baru" onclick="setBkdType('baru')" class="px-2 py-0.5 rounded bg-emerald-600 text-white font-bold">Tera Baru</button>
+                            <button id="bkd-type-ulang" onclick="setBkdType('ulang')" class="px-2 py-0.5 rounded bg-slate-700 text-slate-400">Tera Ulang</button>
+                        </div>
+                    </h4>
+                    <table class="w-full text-left border-collapse font-mono text-[11px]">
+                        <thead>
+                            <tr class="border-b border-slate-700 text-slate-400">
+                                <th class="py-1">Rentang Muatan (m)</th>
+                                <th class="py-1 text-center">Dalam e</th>
+                                <th class="py-1 text-right">BKD (Tera)</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-800 text-slate-300">
+                            <tr>
+                                <td class="py-1">0 ≤ m ≤ 50 kg</td>
+                                <td class="text-center">0 - 500 e</td>
+                                <td id="bkd-val-1" class="text-right text-emerald-400 font-bold">± 0.5 e (± 50 g)</td>
+                            </tr>
+                            <tr>
+                                <td class="py-1">50 kg < m ≤ 200 kg</td>
+                                <td class="text-center">500 e - 2000 e</td>
+                                <td id="bkd-val-2" class="text-right text-emerald-400 font-bold">± 1.0 e (± 100 g)</td>
+                            </tr>
+                            <tr>
+                                <td class="py-1">200 kg < m ≤ 500 kg</td>
+                                <td class="text-center">2000 e - 5000 e</td>
+                                <td id="bkd-val-3" class="text-right text-emerald-400 font-bold">± 1.5 e (± 150 g)</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Guided Steps Accordion -->
+                <div class="space-y-2">
+                    <h4 class="text-xs font-bold text-slate-300 uppercase tracking-wider">Langkah-Langkah Pengujian Resmi:</h4>
+                    
+                    <!-- Step 1 -->
+                    <div class="bg-slate-800/80 rounded-lg p-3 border border-slate-700 text-xs">
+                        <div class="flex items-center justify-between cursor-pointer" onclick="recordStepResult(1)">
+                            <span class="font-bold text-emerald-400">1. Pemeriksaan Visual & Konstruksi</span>
+                            <span id="step-status-1" class="text-[10px] bg-slate-700 text-slate-300 px-2 py-0.5 rounded">Belum Diuji</span>
+                        </div>
+                        <p class="text-[11px] text-slate-400 mt-1">Periksa kelengkapan pelat identitas, kebersihan pisau-bantalan, serta kondisi ratanya waterpas.</p>
+                        <button onclick="executeTestStep(1)" class="mt-2 bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-500/40 text-emerald-300 w-full py-1.5 rounded text-xs font-semibold">
+                            Verifikasi Visual Timbangan
+                        </button>
+                    </div>
+
+                    <!-- Step 2 -->
+                    <div class="bg-slate-800/80 rounded-lg p-3 border border-slate-700 text-xs">
+                        <div class="flex items-center justify-between">
+                            <span class="font-bold text-slate-200">2. Pengujian Setimbang Nol</span>
+                            <span id="step-status-2" class="text-[10px] bg-slate-700 text-slate-300 px-2 py-0.5 rounded">Belum Diuji</span>
+                        </div>
+                        <p class="text-[11px] text-slate-400 mt-1">Tanpa beban, atur Sekrup Penyetel hingga gandar tepat berada di posisi setimbang (tengah mulut gandar).</p>
+                        <button onclick="executeTestStep(2)" class="mt-2 bg-slate-700 hover:bg-slate-600 text-slate-200 w-full py-1.5 rounded text-xs font-semibold">
+                            Uji Kesetimbangan Nol
+                        </button>
+                    </div>
+
+                    <!-- Step 3 -->
+                    <div class="bg-slate-800/80 rounded-lg p-3 border border-slate-700 text-xs">
+                        <div class="flex items-center justify-between">
+                            <span class="font-bold text-slate-200">3. Pengujian Kebenaran (Accuracy)</span>
+                            <span id="step-status-3" class="text-[10px] bg-slate-700 text-slate-300 px-2 py-0.5 rounded">Belum Diuji</span>
+                        </div>
+                        <p class="text-[11px] text-slate-400 mt-1">Uji penunjukan pada Min (2kg), 50% Max (250kg), dan Max (500kg). Pastikan kesalahan ≤ BKD.</p>
+                        <button onclick="executeTestStep(3)" class="mt-2 bg-slate-700 hover:bg-slate-600 text-slate-200 w-full py-1.5 rounded text-xs font-semibold">
+                            Catat Data Pengujian Kebenaran
+                        </button>
+                    </div>
+
+                    <!-- Step 4 -->
+                    <div class="bg-slate-800/80 rounded-lg p-3 border border-slate-700 text-xs">
+                        <div class="flex items-center justify-between">
+                            <span class="font-bold text-slate-200">4. Pengujian Eksentrisitas (Shift Test)</span>
+                            <span id="step-status-4" class="text-[10px] bg-slate-700 text-slate-300 px-2 py-0.5 rounded">Belum Diuji</span>
+                        </div>
+                        <p class="text-[11px] text-slate-400 mt-1">Letakkan 1/3 Max (166.6 kg) pada 5 posisi lantai muatan. Perbedaan antar posisi tidak boleh melebihi BKD.</p>
+                        <button onclick="executeTestStep(4)" class="mt-2 bg-slate-700 hover:bg-slate-600 text-slate-200 w-full py-1.5 rounded text-xs font-semibold">
+                            Uji Eksentrisitas 5 Posisi
+                        </button>
+                    </div>
+
+                    <!-- Step 5 -->
+                    <div class="bg-slate-800/80 rounded-lg p-3 border border-slate-700 text-xs">
+                        <div class="flex items-center justify-between">
+                            <span class="font-bold text-slate-200">5. Pengujian Kepekaan (Sensitivity)</span>
+                            <span id="step-status-5" class="text-[10px] bg-slate-700 text-slate-300 px-2 py-0.5 rounded">Belum Diuji</span>
+                        </div>
+                        <p class="text-[11px] text-slate-400 mt-1">Saat setimbang pada Max (500kg), tambahkan imbalan sebesar |BKD| (150g). Gandar harus bergerak bergeser secara jelas.</p>
+                        <button onclick="executeTestStep(5)" class="mt-2 bg-slate-700 hover:bg-slate-600 text-slate-200 w-full py-1.5 rounded text-xs font-semibold">
+                            Uji Kepekaan (+150g Imbalan)
+                        </button>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- TAB 3: BERITA ACARA PENGUJIAN (BAP) & EXAM SCORE -->
+            <div id="tab-content-bap" class="flex-1 overflow-y-auto p-4 space-y-4 hidden">
+                
+                <!-- Exam Mode Header Status -->
+                <div id="exam-status-card" class="bg-slate-800 p-4 rounded-xl border border-slate-700 space-y-2 hidden">
+                    <div class="flex justify-between items-center">
+                        <span class="text-xs font-bold text-amber-400 uppercase tracking-wider"><i class="fa-solid fa-clock-rotate-left mr-1"></i>Status Ujian Peneraan</span>
+                        <span id="exam-timer" class="font-mono text-xs text-slate-300">Waktu: 15:00</span>
+                    </div>
+                    <p class="text-xs text-slate-300">
+                        Timbangan ini telah dikondisikan dengan variasi mekanis acak. Lakukan pengujian dan isi lembar kerja pengujian di bawah ini untuk menentukan kelayakan Tanda Tera Sah.
+                    </p>
+                    <button onclick="submitExam()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs py-2 rounded-lg font-bold transition shadow-lg">
+                        <i class="fa-solid fa-paper-plane mr-1"></i> Submit & Selesaikan Ujian
+                    </button>
+                </div>
+
+                <!-- Interactive Form BAP -->
+                <div class="bg-white text-slate-900 p-5 rounded-xl shadow-2xl space-y-4 font-serif text-xs">
+                    <!-- BAP Header -->
+                    <div class="text-center border-b-2 border-slate-900 pb-3">
+                        <h2 class="font-bold text-sm tracking-wide uppercase">KEMENTERIAN PERDAGANGAN REPUBLIK INDONESIA</h2>
+                        <h3 class="font-bold text-xs uppercase text-slate-700">DIREKTORAT JENDERAL PERLINDUNGAN KONSUMEN DAN TERTIB NIAGA</h3>
+                        <p class="text-[10px] font-sans text-slate-600 mt-0.5">BERITA ACARA PENGUJIAN METROLOGI LEGAL (BAP - TBO)</p>
+                    </div>
+
+                    <!-- BAP Metadata -->
+                    <div class="grid grid-cols-2 gap-2 text-[11px] font-sans">
+                        <div>
+                            <span class="text-slate-500 block">Jenis UtTP:</span>
+                            <span class="font-bold">Timbangan Sentisimal (TBO)</span>
+                        </div>
+                        <div>
+                            <span class="text-slate-500 block">Kapasitas / Daya Baca:</span>
+                            <span class="font-bold">500 kg / e = 100 g</span>
+                        </div>
+                        <div>
+                            <span class="text-slate-500 block">Nomor Seri:</span>
+                            <span id="bap-sn" class="font-bold font-mono">ST-2026-9941</span>
+                        </div>
+                        <div>
+                            <span class="text-slate-500 block">Jenis Pengujian:</span>
+                            <span id="bap-test-type" class="font-bold">Tera Ulang</span>
+                        </div>
+                    </div>
+
+                    <!-- Test Data Entry Table -->
+                    <div class="font-sans space-y-2">
+                        <h4 class="font-bold text-[11px] text-slate-800 border-b border-slate-300 pb-1">HASIL PENGUJIAN KEBENARAN</h4>
+                        <table class="w-full text-left border-collapse text-[10px]">
+                            <thead>
+                                <tr class="bg-slate-100 border border-slate-300 text-slate-700">
+                                    <th class="p-1">Muatan (m)</th>
+                                    <th class="p-1 text-center">Penunjukan (I)</th>
+                                    <th class="p-1 text-center">BKD (g)</th>
+                                    <th class="p-1 text-center">Hasil</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-200 border border-slate-300 font-mono">
+                                <tr>
+                                    <td class="p-1 font-sans">Min (2 kg)</td>
+                                    <td class="p-1 text-center"><input type="text" id="bap-reading-min" placeholder="e.g. 2.0 kg" class="w-16 border rounded text-center p-0.5"></td>
+                                    <td class="p-1 text-center text-slate-500">±100g</td>
+                                    <td class="p-1 text-center" id="status-row-min">-</td>
+                                </tr>
+                                <tr>
+                                    <td class="p-1 font-sans">50% Max (250 kg)</td>
+                                    <td class="p-1 text-center"><input type="text" id="bap-reading-50" placeholder="e.g. 250.0 kg" class="w-16 border rounded text-center p-0.5"></td>
+                                    <td class="p-1 text-center text-slate-500">±300g</td>
+                                    <td class="p-1 text-center" id="status-row-50">-</td>
+                                </tr>
+                                <tr>
+                                    <td class="p-1 font-sans">Max (500 kg)</td>
+                                    <td class="p-1 text-center"><input type="text" id="bap-reading-max" placeholder="e.g. 500.0 kg" class="w-16 border rounded text-center p-0.5"></td>
+                                    <td class="p-1 text-center text-slate-500">±300g</td>
+                                    <td class="p-1 text-center" id="status-row-max">-</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Final Decision Radio -->
+                    <div class="font-sans pt-2 border-t border-slate-300 space-y-1">
+                        <label class="font-bold text-[11px] text-slate-800 block">Keputusan Penera:</label>
+                        <div class="flex gap-4">
+                            <label class="flex items-center gap-1.5 cursor-pointer">
+                                <input type="radio" name="bap-decision" value="sah" class="accent-emerald-600" checked>
+                                <span class="font-bold text-emerald-700">DISAHKAN (Cap Tanda Tera Sah)</span>
+                            </label>
+                            <label class="flex items-center gap-1.5 cursor-pointer">
+                                <input type="radio" name="bap-decision" value="batal" class="accent-red-600">
+                                <span class="font-bold text-red-700">DITOLAK / DIBATALKAN</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Print BAP Button -->
+                    <button onclick="printBAPReport()" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-sans text-xs py-2 rounded font-bold transition flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-print"></i> Cetak / Export Berita Acara (PDF)
+                    </button>
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <!-- MODAL SCORE / RESULTS FOR EXAM MODE -->
+    <div id="exam-score-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center hidden">
+        <div class="bg-slate-900 border border-slate-800 p-6 rounded-2xl max-w-md w-full shadow-2xl space-y-4 text-center">
+            <div id="score-icon-badge" class="w-16 h-16 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mx-auto border border-emerald-500/40 text-2xl">
+                <i class="fa-solid fa-trophy"></i>
+            </div>
+            <div>
+                <h3 class="text-lg font-bold text-slate-100">Hasil Evaluasi Praktik Penera</h3>
+                <p class="text-xs text-slate-400 mt-1">Ujian Kompetensi Metrologi Legal Timbangan Sentisimal</p>
+            </div>
+            
+            <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 font-mono">
+                <span class="text-slate-400 text-xs block">NILAI AKHIR</span>
+                <span id="final-score-val" class="text-4xl font-extrabold text-emerald-400">95 / 100</span>
+                <span id="exam-grade-text" class="text-xs text-emerald-300 block mt-1">LULUS - SANGAT MEMUASKAN</span>
+            </div>
+
+            <div id="exam-feedback-list" class="text-left text-xs text-slate-300 space-y-1.5 bg-slate-800/60 p-3 rounded-lg max-h-40 overflow-y-auto">
+                <!-- Dynamic feedback items -->
+            </div>
+
+            <button onclick="closeExamModal()" class="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold py-2 rounded-lg text-xs transition">
+                Tutup Evaluasi
+            </button>
+        </div>
+    </div>
+
+    <!-- JAVASCRIPT LOGIC & THREE.JS ENGINE -->
+    <script>
+        /* ====================================================================
+           1. METROLOGICAL ENGINE & STATE MANAGEMENT
+           ==================================================================== */
+        const SCALE_CONFIG = {
+            Max: 500,         // kg
+            Min: 2,           // kg (20e)
+            e: 0.1,           // kg (100g)
+            leverRatio: 0.01, // 1:100 ratio
+            maxSlidingPoise: 50 // kg
+        };
+
+        // App States
+        let appMode = 'practice'; // 'practice' or 'exam'
+        let bkdType = 'baru';     // 'baru' or 'ulang'
+        let currentTab = 'controls';
+
+        // Physics & Scale Physical Attributes
+        let state = {
+            waterpasOffset: { x: 0, y: 0 }, // Levelness error
+            zeroScrew: 0,                    // g (Range -500g to +500g)
+            slidingPoise: 0,                 // kg (0 to 50kg)
+            hangerWeights: [],               // Array of equivalent kg (e.g. [100, 200])
+            platformLoad: 0,                 // kg
+            loadPosition: 'C',               // 'C', 'TL', 'TR', 'BL', 'BR'
+            sensitivityImbalance: 0,         // kg
+            
+            // Fault injection for Exam Mode
+            faults: {
+                unlevel: 0,                 // tilt severity
+                zeroError: 0,               // hidden zero offset
+                eccentricityWear: 0,        // knife edge wear on corner BL
+                dullPivot: 1.0              // sensitivity factor (1.0 normal, 0.2 dull)
+            }
+        };
+
+        // Recorded test results for BAP
+        let testRecords = {
+            visualPassed: false,
+            zeroPassed: false,
+            readings: { min: null, half: null, max: null },
+            eccentricityReadings: { C: 0, TL: 0, TR: 0, BL: 0, BR: 0 },
+            sensitivityPassed: false
+        };
+
+        /* ====================================================================
+           2. THREE.JS 3D SCENE SETUP (DIGITAL TWIN VISUALIZER)
+           ==================================================================== */
+        let scene, camera, renderer, controls;
+        let gandarGroup, platformMesh, weightsOnHangerGroup, testLoadsOnPlatformGroup, leversGroup;
+        let slidingPoiseMesh, zeroScrewMesh;
+        let materials = {};
+
+        function init3D() {
+            const container = document.getElementById('canvas-container');
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+
+            // Scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0b132b);
+            scene.fog = new THREE.FogExp2(0x0b132b, 0.015);
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
+            camera.position.set(2.5, 2.2, 3.5);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(width, height);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            container.appendChild(renderer.domElement);
+
+            // Orbit Controls
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.target.set(0, 0.8, 0);
+
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+            dirLight.position.set(5, 10, 7);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 2048;
+            dirLight.shadow.mapSize.height = 2048;
+            scene.add(dirLight);
+
+            const pointLight = new THREE.PointLight(0x38bdf8, 0.8, 10);
+            pointLight.position.set(-2, 3, -1);
+            scene.add(pointLight);
+
+            // Materials
+            materials.greenEnamel = new THREE.MeshStandardMaterial({ color: 0x1b4332, roughness: 0.4, metalness: 0.3 });
+            materials.castIron = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.8, metalness: 0.2 });
+            materials.brass = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.3, metalness: 0.8 });
+            materials.steel = new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.2, metalness: 0.9 });
+            materials.glassTranslucent = new THREE.MeshPhysicalMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.25, roughness: 0.1 });
+
+            // Build 3D Objects
+            createFloor();
+            createScaleModel();
+
+            // Window Resize
+            window.addEventListener('resize', onWindowResize);
+
+            // Render Loop
+            animate();
+        }
+
+        function createFloor() {
+            const floorGeo = new THREE.PlaneGeometry(20, 20);
+            const floorMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.9 });
+            const floor = new THREE.Mesh(floorGeo, floorMat);
+            floor.rotation.x = -Math.PI / 2;
+            floor.receiveShadow = true;
+            scene.add(floor);
+
+            const grid = new THREE.GridHelper(20, 20, 0x334155, 0x1e293b);
+            grid.position.y = 0.001;
+            scene.add(grid);
+        }
+
+        function createScaleModel() {
+            const scaleGroup = new THREE.Group();
+
+            // 1. Base Frame (Rangka Bawah)
+            const baseGeo = new THREE.BoxGeometry(1.4, 0.25, 1.0);
+            const baseMesh = new THREE.Mesh(baseGeo, materials.greenEnamel);
+            baseMesh.position.set(0, 0.125, 0);
+            baseMesh.castShadow = true;
+            baseMesh.receiveShadow = true;
+            scaleGroup.add(baseMesh);
+
+            // 4 Corner Feet
+            for (let x of [-0.6, 0.6]) {
+                for (let z of [-0.4, 0.4]) {
+                    const footGeo = new THREE.CylinderGeometry(0.06, 0.08, 0.1, 16);
+                    const foot = new THREE.Mesh(footGeo, materials.castIron);
+                    foot.position.set(x, 0.05, z);
+                    scaleGroup.add(foot);
+                }
+            }
+
+            // 2. Translucent Internal Levers (Rangkaian Tuas 1:100)
+            leversGroup = new THREE.Group();
+            const lever1Geo = new THREE.BoxGeometry(1.2, 0.04, 0.08);
+            const lever1 = new THREE.Mesh(lever1Geo, materials.steel);
+            lever1.position.set(0, 0.15, 0);
+            leversGroup.add(lever1);
+
+            const lever2Geo = new THREE.BoxGeometry(0.08, 0.04, 0.8);
+            const lever2 = new THREE.Mesh(lever2Geo, materials.steel);
+            lever2.position.set(0.4, 0.15, 0);
+            leversGroup.add(lever2);
+            scaleGroup.add(leversGroup);
+
+            // 3. Platform (Lantai Muatan)
+            const platGeo = new THREE.BoxGeometry(1.3, 0.08, 0.9);
+            platformMesh = new THREE.Mesh(platGeo, materials.castIron);
+            platformMesh.position.set(0, 0.29, 0);
+            platformMesh.castShadow = true;
+            platformMesh.receiveShadow = true;
+            scaleGroup.add(platformMesh);
+
+            // 4. Vertical Pillar / Column (Tiang Penyangga Gandar)
+            const colGeo = new THREE.BoxGeometry(0.15, 1.2, 0.15);
+            const colMesh = new THREE.Mesh(colGeo, materials.greenEnamel);
+            colMesh.position.set(0.55, 0.85, -0.35);
+            colMesh.castShadow = true;
+            scaleGroup.add(colMesh);
+
+            // Vertical Connecting Rod inside Column
+            const rodGeo = new THREE.CylinderGeometry(0.015, 0.015, 1.1, 16);
+            const rodMesh = new THREE.Mesh(rodGeo, materials.steel);
+            rodMesh.position.set(0.55, 0.8, -0.35);
+            scaleGroup.add(rodMesh);
+
+            // 5. Gandar Utama (Steelyard Beam Group - Pivots & Swivels!)
+            gandarGroup = new THREE.Group();
+            gandarGroup.position.set(0.55, 1.35, -0.35); // Pivot point
+
+            // Main Beam Body
+            const beamGeo = new THREE.BoxGeometry(1.6, 0.06, 0.04);
+            const beamMesh = new THREE.Mesh(beamGeo, materials.brass);
+            beamMesh.position.set(-0.6, 0, 0); // Extended leftwards
+            beamMesh.castShadow = true;
+            gandarGroup.add(beamMesh);
+
+            // Notched Scale Markings on Beam
+            const scalePlateGeo = new THREE.BoxGeometry(1.0, 0.062, 0.042);
+            const scalePlate = new THREE.Mesh(scalePlateGeo, materials.steel);
+            scalePlate.position.set(-0.6, 0, 0);
+            gandarGroup.add(scalePlate);
+
+            // Sliding Poise (Bobot Ingsut) - Draggable horizontally
+            const poiseGeo = new THREE.BoxGeometry(0.08, 0.1, 0.08);
+            slidingPoiseMesh = new THREE.Mesh(poiseGeo, materials.brass);
+            slidingPoiseMesh.position.set(-0.1, 0, 0);
+            gandarGroup.add(slidingPoiseMesh);
+
+            // Zero Screw Adjuster at the right short end
+            const zeroScrewGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.08, 16);
+            zeroScrewMesh = new THREE.Mesh(zeroScrewGeo, materials.steel);
+            zeroScrewMesh.rotation.z = Math.PI / 2;
+            zeroScrewMesh.position.set(0.15, 0, 0);
+            gandarGroup.add(zeroScrewMesh);
+
+            // Hanger Hook & Plate at the far left tip of beam
+            const hangerGroup = new THREE.Group();
+            hangerGroup.position.set(-1.35, 0, 0);
+
+            const rodHangerGeo = new THREE.CylinderGeometry(0.008, 0.008, 0.35, 16);
+            const rodHanger = new THREE.Mesh(rodHangerGeo, materials.steel);
+            rodHanger.position.y = -0.175;
+            hangerGroup.add(rodHanger);
+
+            const plateHangerGeo = new THREE.CylinderGeometry(0.15, 0.15, 0.02, 32);
+            const plateHanger = new THREE.Mesh(plateHangerGeo, materials.brass);
+            plateHanger.position.y = -0.35;
+            plateHanger.castShadow = true;
+            hangerGroup.add(plateHanger);
+
+            // Stack for counterweight ATs on hanger
+            weightsOnHangerGroup = new THREE.Group();
+            weightsOnHangerGroup.position.y = -0.34;
+            hangerGroup.add(weightsOnHangerGroup);
+
+            gandarGroup.add(hangerGroup);
+
+            // Indicator Pointer Needle (Jarum Penunjuk) at the left end
+            const pointerGeo = new THREE.ConeGeometry(0.015, 0.12, 16);
+            const pointerMesh = new THREE.Mesh(pointerGeo, materials.brass);
+            pointerMesh.rotation.z = Math.PI;
+            pointerMesh.position.set(-1.38, -0.06, 0);
+            gandarGroup.add(pointerMesh);
+
+            scaleGroup.add(gandarGroup);
+
+            // 6. Limit Stop Gate (Mulut Gandar / Indikator Setimbang)
+            const gateGroup = new THREE.Group();
+            gateGroup.position.set(-0.83, 1.35, -0.35);
+            const gateFrameGeo = new THREE.BoxGeometry(0.04, 0.22, 0.08);
+            const gateFrame = new THREE.Mesh(gateFrameGeo, materials.greenEnamel);
+            gateGroup.add(gateFrame);
+
+            // Center Index Line
+            const indexGeo = new THREE.BoxGeometry(0.042, 0.005, 0.082);
+            const indexMesh = new THREE.Mesh(indexGeo, materials.brass);
+            gateGroup.add(indexMesh);
+
+            scaleGroup.add(gateGroup);
+
+            // 7. Test Loads Container on Platform
+            testLoadsOnPlatformGroup = new THREE.Group();
+            scaleGroup.add(testLoadsOnPlatformGroup);
+
+            scene.add(scaleGroup);
+        }
+
+        function onWindowResize() {
+            const container = document.getElementById('canvas-container');
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        }
+
+        /* ====================================================================
+           3. SIMULATED PHYSICS & BALANCE CALCULATION ENGINE
+           ==================================================================== */
+        function calculatePhysicsBalance() {
+            // Effective load on platform considering position (Eccentricity)
+            let posMultiplier = 1.0;
+            if (state.loadPosition === 'BL') posMultiplier += (0.0015 * state.faults.eccentricityWear);
+
+            const effectivePlatformLoad = state.platformLoad * posMultiplier;
+
+            // Total Counter balance torque from Hanger ATs + Sliding Poise + Zero Screw
+            const totalHangerAT_eq = state.hangerWeights.reduce((a, b) => a + b, 0);
+            const slidingPoise_eq = state.slidingPoise;
+            const zeroScrew_eq = (state.zeroScrew / 1000) + state.faults.zeroError; // convert g to kg
+
+            const measuredCounterbalance = totalHangerAT_eq + slidingPoise_eq;
+            
+            // Torque Difference (Net Imbalance)
+            const imbalanceKg = (effectivePlatformLoad - measuredCounterbalance) - zeroScrew_eq + state.sensitivityImbalance;
+
+            // Gandar Beam Rotation Angle (Clamped between limit stops)
+            // Sensitivity factor scales how far it deflects
+            let targetAngle = imbalanceKg * 0.15 * state.faults.dullPivot;
+            const maxDeflection = 0.085; // approx 5 degrees limit
+            targetAngle = Math.max(-maxDeflection, Math.min(maxDeflection, targetAngle));
+
+            return {
+                imbalanceKg: imbalanceKg,
+                targetAngle: targetAngle,
+                isBalanced: Math.abs(imbalanceKg) < (SCALE_CONFIG.e * 0.5)
+            };
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Calculate current balance
+            const physics = calculatePhysicsBalance();
+
+            // Lerp Gandar Beam Rotation smoothly
+            gandarGroup.rotation.z += (physics.targetAngle - gandarGroup.rotation.z) * 0.1;
+
+            // Update UI HUD Text & Badge
+            const deg = (gandarGroup.rotation.z * (180 / Math.PI)).toFixed(1);
+            document.getElementById('pointer-angle-text').innerText = `Deviasi: ${deg > 0 ? '+' : ''}${deg}°`;
+
+            const badge = document.getElementById('balance-status-badge');
+            if (physics.isBalanced) {
+                badge.innerText = "SETIMBANG (NOL PAS)";
+                badge.className = "px-2.5 py-1 rounded text-xs font-bold font-mono bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 pulse-active";
+            } else {
+                badge.innerText = physics.targetAngle > 0 ? "BERAT DI PLATFORM (BEBAN > AT)" : "BERAT DI GANDAR (AT > BEBAN)";
+                badge.className = "px-2.5 py-1 rounded text-xs font-bold font-mono bg-amber-500/20 text-amber-400 border border-amber-500/40";
+            }
+
+            // Render
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        /* ====================================================================
+           4. USER INTERACTION & CONTROLLER FUNCTIONS
+           ==================================================================== */
+        function updateZeroScrew(val) {
+            state.zeroScrew = parseFloat(val);
+            document.getElementById('zero-screw-val').innerText = `${state.zeroScrew > 0 ? '+' : ''}${state.zeroScrew} g`;
+            
+            // Rotate 3D Zero Screw Knob
+            if (zeroScrewMesh) zeroScrewMesh.rotation.x = state.zeroScrew * 0.05;
+        }
+
+        function updateSlidingPoise(val) {
+            state.slidingPoise = parseFloat(val);
+            document.getElementById('sliding-poise-val').innerText = `${state.slidingPoise.toFixed(2)} kg`;
+
+            // Move 3D Sliding Poise along Beam (-0.1 to -1.1 X axis)
+            if (slidingPoiseMesh) {
+                const posX = -0.1 - (state.slidingPoise / SCALE_CONFIG.maxSlidingPoise) * 1.0;
+                slidingPoiseMesh.position.x = posX;
+            }
+        }
+
+        function addHangerWeight(kgEquivalent) {
+            state.hangerWeights.push(kgEquivalent);
+            renderHangerWeights();
+        }
+
+        function clearHangerWeights() {
+            state.hangerWeights = [];
+            renderHangerWeights();
+        }
+
+        function renderHangerWeights() {
+            const listEl = document.getElementById('hanger-weights-list');
+            const totalValEl = document.getElementById('total-at-val');
+
+            const total = state.hangerWeights.reduce((a, b) => a + b, 0);
+            totalValEl.innerText = `${total} kg (Setara ${total} kg)`;
+
+            if (state.hangerWeights.length === 0) {
+                listEl.innerHTML = `<span class="text-slate-500 italic text-[11px]">Belum ada Anak Timbangan di piringan</span>`;
+            } else {
+                listEl.innerHTML = state.hangerWeights.map((w, idx) => `
+                    <span class="bg-blue-600/30 border border-blue-500/40 text-blue-300 px-2 py-0.5 rounded flex items-center gap-1">
+                        ${w}kg <button onclick="removeHangerWeight(${idx})" class="text-xs hover:text-red-400">×</button>
+                    </span>
+                `).join('');
+            }
+
+            // Render 3D Stacked Discs on Hanger
+            while (weightsOnHangerGroup.children.length > 0) {
+                weightsOnHangerGroup.remove(weightsOnHangerGroup.children[0]);
+            }
+
+            let stackY = 0;
+            state.hangerWeights.forEach(w => {
+                const discHeight = 0.03 * (w / 100);
+                const discGeo = new THREE.CylinderGeometry(0.13, 0.13, discHeight, 32);
+                const discMesh = new THREE.Mesh(discGeo, materials.brass);
+                discMesh.position.y = stackY + discHeight / 2;
+                discMesh.castShadow = true;
+                weightsOnHangerGroup.add(discMesh);
+                stackY += discHeight + 0.005;
+            });
+        }
+
+        function removeHangerWeight(index) {
+            state.hangerWeights.splice(index, 1);
+            renderHangerWeights();
+        }
+
+        function setPlatformLoad(kg) {
+            state.platformLoad = kg;
+            document.getElementById('platform-load-val').innerText = `${kg} kg`;
+            renderPlatform3DLoads();
+        }
+
+        function addSensitivityImbalance() {
+            // Adds +150g (1.5e) extra load
+            state.sensitivityImbalance = state.sensitivityImbalance === 0 ? 0.15 : 0;
+            const btn = event.currentTarget;
+            if (state.sensitivityImbalance > 0) {
+                btn.className = "bg-amber-500 text-slate-900 border border-amber-400 font-bold py-1.5 rounded font-mono text-[11px]";
+            } else {
+                btn.className = "bg-amber-600/30 hover:bg-amber-600/50 border border-amber-500/40 text-amber-300 py-1.5 rounded font-mono text-[11px]";
+            }
+        }
+
+        function setLoadPosition(pos) {
+            state.loadPosition = pos;
+
+            const btnIds = { 'TL': 'pos-btn-tl', 'C': 'pos-btn-c', 'TR': 'pos-btn-tr', 'BL': 'pos-btn-bl', 'BR': 'pos-btn-br' };
+            Object.keys(btnIds).forEach(k => {
+                const el = document.getElementById(btnIds[k]);
+                if (k === pos) {
+                    el.className = "bg-emerald-600/40 border border-emerald-500 text-emerald-300 p-2 rounded font-bold";
+                } else {
+                    el.className = "bg-slate-900 hover:bg-slate-700 p-2 rounded border border-slate-700 text-slate-300";
+                }
+            });
+
+            renderPlatform3DLoads();
+        }
+
+        function renderPlatform3DLoads() {
+            while (testLoadsOnPlatformGroup.children.length > 0) {
+                testLoadsOnPlatformGroup.remove(testLoadsOnPlatformGroup.children[0]);
+            }
+
+            if (state.platformLoad <= 0) return;
+
+            // Determine X, Z offset based on loadPosition
+            let offsetX = 0, offsetZ = 0;
+            if (state.loadPosition === 'TL') { offsetX = -0.35; offsetZ = -0.25; }
+            if (state.loadPosition === 'TR') { offsetX = 0.35; offsetZ = -0.25; }
+            if (state.loadPosition === 'BL') { offsetX = -0.35; offsetZ = 0.25; }
+            if (state.loadPosition === 'BR') { offsetX = 0.35; offsetZ = 0.25; }
+
+            const blockGeo = new THREE.BoxGeometry(0.4, 0.25, 0.3);
+            const blockMesh = new THREE.Mesh(blockGeo, materials.castIron);
+            blockMesh.position.set(offsetX, 0.45, offsetZ);
+            blockMesh.castShadow = true;
+            testLoadsOnPlatformGroup.add(blockMesh);
+        }
+
+        function adjustLevelingFeet() {
+            state.waterpasOffset = { x: 0, y: 0 };
+            document.getElementById('waterpas-bubble').style.transform = `translate(0px, 0px)`;
+            document.getElementById('waterpas-status').innerText = "Datar (Nivo Pas)";
+            document.getElementById('waterpas-status').className = "text-xs font-semibold text-emerald-400";
+        }
+
+        /* ====================================================================
+           5. METROLOGY TEST PROTOCOL & EXAM SCORING SYSTEM
+           ==================================================================== */
+        function switchTab(tabName) {
+            currentTab = tabName;
+            ['controls', 'protocol', 'bap'].forEach(t => {
+                document.getElementById(`tab-content-${t}`).classList.add('hidden');
+                const btn = document.getElementById(`tab-btn-${t}`);
+                btn.className = "flex-1 py-3 border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center justify-center gap-2";
+            });
+
+            document.getElementById(`tab-content-${tabName}`).classList.remove('hidden');
+            const activeBtn = document.getElementById(`tab-btn-${tabName}`);
+            activeBtn.className = "flex-1 py-3 border-b-2 border-emerald-500 text-emerald-400 font-semibold flex items-center justify-center gap-2";
+        }
+
+        function setBkdType(type) {
+            bkdType = type;
+            const btnBaru = document.getElementById('bkd-type-baru');
+            const btnUlang = document.getElementById('bkd-type-ulang');
+
+            if (type === 'baru') {
+                btnBaru.className = "px-2 py-0.5 rounded bg-emerald-600 text-white font-bold";
+                btnUlang.className = "px-2 py-0.5 rounded bg-slate-700 text-slate-400";
+                document.getElementById('bkd-val-1').innerText = "± 0.5 e (± 50 g)";
+                document.getElementById('bkd-val-2').innerText = "± 1.0 e (± 100 g)";
+                document.getElementById('bkd-val-3').innerText = "± 1.5 e (± 150 g)";
+            } else {
+                btnUlang.className = "px-2 py-0.5 rounded bg-emerald-600 text-white font-bold";
+                btnBaru.className = "px-2 py-0.5 rounded bg-slate-700 text-slate-400";
+                document.getElementById('bkd-val-1').innerText = "± 1.0 e (± 100 g)";
+                document.getElementById('bkd-val-2').innerText = "± 2.0 e (± 200 g)";
+                document.getElementById('bkd-val-3').innerText = "± 3.0 e (± 300 g)";
+            }
+        }
+
+        function setCameraView(viewType) {
+            if (viewType === 'default') {
+                controls.target.set(0, 0.8, 0);
+                camera.position.set(2.5, 2.2, 3.5);
+            } else if (viewType === 'gandar') {
+                controls.target.set(-0.3, 1.35, -0.35);
+                camera.position.set(-0.3, 1.5, 0.8);
+            } else if (viewType === 'levers') {
+                controls.target.set(0, 0.3, 0);
+                camera.position.set(0, 1.8, 1.8);
+                platformMesh.material = materials.glassTranslucent;
+                return;
+            }
+            platformMesh.material = materials.castIron;
+        }
+
+        function executeTestStep(stepNum) {
+            const physics = calculatePhysicsBalance();
+            const statusEl = document.getElementById(`step-status-${stepNum}`);
+
+            if (stepNum === 1) { // Visual
+                statusEl.innerText = "LULUS UJI";
+                statusEl.className = "text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded font-bold";
+                showToast("Pemeriksaan Visual", "Plat Identitas lengkap (Max 500kg, e=100g, No. Seri valid), pisau-bantalan bersih, waterpas datar.");
+            } else if (stepNum === 2) { // Zero
+                if (state.platformLoad === 0 && physics.isBalanced) {
+                    statusEl.innerText = "SETIMBANG NOL (SAH)";
+                    statusEl.className = "text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded font-bold";
+                    showToast("Uji Setimbang Nol", "Gandar berada tepat di tengah penunjuk nol saat lantai muatan kosong.");
+                } else {
+                    statusEl.innerText = "GAGAL SETIMBANG";
+                    statusEl.className = "text-[10px] bg-red-500/20 text-red-400 border border-red-500/30 px-2 py-0.5 rounded font-bold";
+                    showToast("Peringatan Nol", "Putar Sekrup Penyetel Nol hingga gandar sejajar di tengah!");
+                }
+            } else if (stepNum === 3) { // Accuracy
+                const totalReading = state.hangerWeights.reduce((a,b)=>a+b,0) + state.slidingPoise;
+                if (state.platformLoad === 2) document.getElementById('bap-reading-min').value = `${totalReading.toFixed(1)} kg`;
+                if (state.platformLoad === 250) document.getElementById('bap-reading-50').value = `${totalReading.toFixed(1)} kg`;
+                if (state.platformLoad === 500) document.getElementById('bap-reading-max').value = `${totalReading.toFixed(1)} kg`;
+                
+                statusEl.innerText = "TERCATAT KE BAP";
+                statusEl.className = "text-[10px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded font-bold";
+                showToast("Data Kebenaran", `Hasil penunjukan ${totalReading.toFixed(1)} kg telah direkam ke formulir Berita Acara.`);
+            } else if (stepNum === 4) { // Shift / Eccentricity
+                statusEl.innerText = "5 POSISI SELESAI";
+                statusEl.className = "text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded font-bold";
+                showToast("Uji Eksentrisitas", "Pengujian 1/3 Max pada 4 sudut dan pusat platform selesai dijalankan.");
+            } else if (stepNum === 5) { // Sensitivity
+                if (state.sensitivityImbalance > 0) {
+                    statusEl.innerText = "SENSITIF (PEKA)";
+                    statusEl.className = "text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded font-bold";
+                    showToast("Hasil Kepekaan", "Gandar bergerak bergeser melebihi 2mm setelah ditambahi imbalan |BKD|.");
+                } else {
+                    statusEl.innerText = "BUTUH IMBALAN";
+                    statusEl.className = "text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded font-bold";
+                    showToast("Uji Kepekaan", "Klik tombol '+BKD (+150g)' untuk menambahkan beban imbalan!");
+                }
+            }
+        }
+
+        /* ====================================================================
+           6. PRACTICE VS EXAM MODE CONTROLLER & FAULT INJECTION
+           ==================================================================== */
+        function setAppMode(mode) {
+            appMode = mode;
+            const btnPrac = document.getElementById('mode-practice-btn');
+            const btnExam = document.getElementById('mode-exam-btn');
+            const examCard = document.getElementById('exam-status-card');
+
+            if (mode === 'practice') {
+                btnPrac.className = "px-3 py-1.5 rounded-md font-medium transition-all bg-emerald-600 text-white shadow";
+                btnExam.className = "px-3 py-1.5 rounded-md font-medium text-slate-400 hover:text-white transition-all";
+                examCard.classList.add('hidden');
+                
+                // Clear faults
+                state.faults = { unlevel: 0, zeroError: 0, eccentricityWear: 0, dullPivot: 1.0 };
+                adjustLevelingFeet();
+                updateZeroScrew(0);
+                showToast("Mode Praktik Mandiri", "Anda berada dalam panduan praktik. Gunakan kontrol untuk mempelajari pengujian.");
+            } else {
+                btnExam.className = "px-3 py-1.5 rounded-md font-medium transition-all bg-amber-600 text-white shadow";
+                btnPrac.className = "px-3 py-1.5 rounded-md font-medium text-slate-400 hover:text-white transition-all";
+                examCard.classList.remove('hidden');
+                switchTab('bap');
+
+                // Inject Random Faults for Exam
+                injectRandomExamFaults();
+                showToast("Mode Ujian Peneraan", "Timbangan diuji dengan kondisi lapangan acak. Analisis kesalahan dan isi BAP!");
+            }
+        }
+
+        function injectRandomExamFaults() {
+            // Random unlevel waterpas
+            const unlevelX = (Math.random() - 0.5) * 16;
+            const unlevelY = (Math.random() - 0.5) * 16;
+            document.getElementById('waterpas-bubble').style.transform = `translate(${unlevelX}px, ${unlevelY}px)`;
+            document.getElementById('waterpas-status').innerText = "Miring (Butuh Stel Kaki)";
+            document.getElementById('waterpas-status').className = "text-xs font-semibold text-amber-400";
+
+            // Random zero shift error (-0.3kg to +0.4kg)
+            state.faults.zeroError = (Math.floor(Math.random() * 7) - 3) * 0.1;
+
+            // Random knife edge wear on corner BL
+            state.faults.eccentricityWear = Math.random() > 0.5 ? 2.5 : 0;
+
+            // Random SN
+            document.getElementById('bap-sn').innerText = `ST-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+        }
+
+        function submitExam() {
+            let score = 100;
+            const feedback = [];
+
+            // Check BAP entries
+            const rMin = parseFloat(document.getElementById('bap-reading-min').value) || 0;
+            const r50 = parseFloat(document.getElementById('bap-reading-50').value) || 0;
+            const rMax = parseFloat(document.getElementById('bap-reading-max').value) || 0;
+
+            const selectedDecision = document.querySelector('input[name="bap-decision"]:checked').value;
+
+            // Ground truth decision based on faults
+            const hasSevereFaults = Math.abs(state.faults.zeroError) > 0.2 || state.faults.eccentricityWear > 2.0;
+            const correctDecision = hasSevereFaults ? 'batal' : 'sah';
+
+            if (selectedDecision === correctDecision) {
+                feedback.push(`<div class="text-emerald-400"><i class="fa-solid fa-check mr-1"></i> Keputusan Akhir (${selectedDecision.toUpperCase()}): TEPAT</div>`);
+            } else {
+                score -= 40;
+                feedback.push(`<div class="text-red-400"><i class="fa-solid fa-xmark mr-1"></i> Keputusan Akhir Salah (Harusnya ${correctDecision.toUpperCase()})</div>`);
+            }
+
+            if (Math.abs(rMin - 2.0) <= 0.1) {
+                feedback.push(`<div class="text-emerald-400"><i class="fa-solid fa-check mr-1"></i> Analisis Penunjukan Min (2kg): Akurat</div>`);
+            } else {
+                score -= 15;
+                feedback.push(`<div class="text-amber-400"><i class="fa-solid fa-triangle-exclamation mr-1"></i> Penunjukan Min kurang presisi</div>`);
+            }
+
+            // Show Score Modal
+            document.getElementById('final-score-val').innerText = `${score} / 100`;
+            document.getElementById('exam-feedback-list').innerHTML = feedback.join('');
+            document.getElementById('exam-score-modal').classList.remove('hidden');
+        }
+
+        function closeExamModal() {
+            document.getElementById('exam-score-modal').classList.add('hidden');
+        }
+
+        function resetSimulation() {
+            state.zeroScrew = 0;
+            state.slidingPoise = 0;
+            state.hangerWeights = [];
+            state.platformLoad = 0;
+            state.loadPosition = 'C';
+            state.sensitivityImbalance = 0;
+
+            document.getElementById('zero-screw-slider').value = 0;
+            document.getElementById('sliding-poise-slider').value = 0;
+            updateZeroScrew(0);
+            updateSlidingPoise(0);
+            renderHangerWeights();
+            setPlatformLoad(0);
+            setLoadPosition('C');
+            adjustLevelingFeet();
+
+            showToast("Lab Di-reset", "Seluruh muatan, bobot ingsut, dan posisi timbangan telah dikembalikan ke kondisi awal.");
+        }
+
+        function showToast(title, desc) {
+            document.getElementById('toast-title').innerText = title;
+            document.getElementById('toast-desc').innerText = desc;
+        }
+
+        function printBAPReport() {
+            window.print();
+        }
+
+        /* Initialize 3D Scene & Application on window load */
+        window.onload = () => {
+            init3D();
+        };
+    </script>
+</body>
+</html>
